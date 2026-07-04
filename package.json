@@ -1,0 +1,22 @@
+{
+  "name": "smart-money-mirror",
+  "version": "0.1.0",
+  "description": "Whale-move alerts + weekly digest from the OKX smart-money leaderboard. Mock-first: runs fully offline until credentials exist.",
+  "type": "module",
+  "private": true,
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "start": "node src/server.js",
+    "serve": "node src/server.js",
+    "tick": "node src/index.js tick",
+    "digest": "node src/index.js digest",
+    "demo": "node src/index.js demo",
+    "reset": "node src/index.js reset",
+    "x402-demo": "node scripts/x402-demo.js",
+    "test": "node --test"
+  },
+  "dependencies": {},
+  "devDependencies": {}
+}

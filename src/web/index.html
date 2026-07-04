@@ -1,0 +1,630 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SMART MONEY MIRROR — whale-move alert terminal</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%23060a08'/%3E%3Ccircle cx='16' cy='16' r='11' fill='none' stroke='%232fff8f' stroke-width='1.5' opacity='.85'/%3E%3Ccircle cx='16' cy='16' r='6' fill='none' stroke='%232fff8f' stroke-width='1' opacity='.4'/%3E%3Cline x1='16' y1='4' x2='16' y2='28' stroke='%232fff8f' stroke-width='.8' opacity='.35'/%3E%3Cpath d='M16 16 L16 5 A11 11 0 0 1 25.5 10.5 Z' fill='%232fff8f' opacity='.3'/%3E%3Ccircle cx='21' cy='11' r='2' fill='%232fff8f'/%3E%3Ccircle cx='11' cy='21' r='2' fill='%23ff4d6a'/%3E%3C/svg%3E">
+<style>
+  :root {
+    --bg: #060a08;
+    --panel: #0a100d;
+    --panel2: #0d1511;
+    --line: #18271f;
+    --line2: #224034;
+    --txt: #cfe3d4;
+    --dim: #647a6c;
+    --dim2: #41544a;
+    --grn: #2fff8f;
+    --grn-soft: rgba(47,255,143,.09);
+    --grn-dim: #1b6e42;
+    --red: #ff4d6a;
+    --red-soft: rgba(255,77,106,.10);
+    --amb: #ffc24d;
+    --amb-soft: rgba(255,194,77,.10);
+    --mono: ui-monospace, "Cascadia Mono", "Cascadia Code", Consolas, "SF Mono", Menlo, "Liberation Mono", monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--txt);
+    font-family: var(--mono);
+    font-size: 13px;
+    line-height: 1.5;
+    min-height: 100vh;
+  }
+  /* CRT: scanlines + vignette, kept subtle */
+  body::before {
+    content: ""; position: fixed; inset: 0; z-index: 999; pointer-events: none;
+    background: repeating-linear-gradient(0deg, transparent 0 2px, rgba(0,0,0,.13) 2px 3px);
+  }
+  body::after {
+    content: ""; position: fixed; inset: 0; z-index: 998; pointer-events: none;
+    background: radial-gradient(ellipse 120% 90% at 50% -10%, rgba(47,255,143,.05), transparent 55%),
+                radial-gradient(ellipse 140% 120% at 50% 55%, transparent 60%, rgba(0,0,0,.5));
+  }
+  a { color: var(--grn); text-decoration: none; }
+
+  .wrap { max-width: 1200px; margin: 0 auto; padding: 14px 16px 40px; }
+
+  /* ── topbar ─────────────────────────────────────────────── */
+  header {
+    display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+    padding: 10px 2px 12px; border-bottom: 1px solid var(--line);
+  }
+  .mark { width: 44px; height: 44px; flex: none; }
+  .mark .ring { fill: none; stroke: var(--grn); }
+  .mark .axis { stroke: var(--grn); opacity: .3; }
+  .mark .sweep { fill: var(--grn); opacity: .22; transform-origin: 24px 24px; animation: sweep 9s linear infinite; }
+  .mark .blip-g { fill: var(--grn); animation: blip 2.4s ease-in-out infinite; }
+  .mark .blip-r { fill: var(--red); animation: blip 2.4s ease-in-out 1.2s infinite; }
+  @keyframes sweep { to { transform: rotate(360deg); } }
+  @keyframes blip { 0%,100% { opacity: .35; } 50% { opacity: 1; } }
+  .brand { display: flex; flex-direction: column; gap: 1px; }
+  .brand .name { font-size: 17px; font-weight: 700; letter-spacing: .22em; color: var(--txt); }
+  .brand .name b { color: var(--grn); text-shadow: 0 0 14px rgba(47,255,143,.55); font-weight: 700; }
+  .brand .sub { font-size: 11px; color: var(--dim); letter-spacing: .06em; }
+  .cursor { display: inline-block; width: 7px; height: 11px; background: var(--grn); vertical-align: -1px; margin-left: 4px; animation: blink 1.1s steps(1) infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+  .top-right { margin-left: auto; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .pill {
+    font-size: 10.5px; letter-spacing: .12em; padding: 3px 9px; border-radius: 3px;
+    border: 1px solid; white-space: nowrap;
+  }
+  .pill-demo { color: var(--amb); border-color: rgba(255,194,77,.45); background: var(--amb-soft); }
+  .pill-live { color: var(--grn); border-color: var(--grn-dim); background: var(--grn-soft); }
+  .health { display: flex; align-items: center; gap: 6px; font-size: 10.5px; letter-spacing: .12em; color: var(--dim); }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--grn); box-shadow: 0 0 8px var(--grn); animation: blip 2s ease-in-out infinite; }
+  .dot.down { background: var(--red); box-shadow: 0 0 8px var(--red); animation: none; }
+
+  /* ── control strip ──────────────────────────────────────── */
+  .controls {
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    padding: 12px 0; border-bottom: 1px solid var(--line);
+  }
+  button {
+    font-family: var(--mono); font-size: 11.5px; letter-spacing: .1em; cursor: pointer;
+    color: var(--grn); background: transparent; border: 1px solid var(--grn-dim);
+    padding: 7px 14px; border-radius: 3px; text-transform: uppercase; transition: all .12s;
+  }
+  button:hover { background: var(--grn-soft); box-shadow: 0 0 14px rgba(47,255,143,.22); border-color: var(--grn); }
+  button:active { transform: translateY(1px); }
+  button:disabled { opacity: .4; cursor: wait; box-shadow: none; }
+  button.warn { color: var(--red); border-color: rgba(255,77,106,.4); }
+  button.warn:hover { background: var(--red-soft); box-shadow: 0 0 14px rgba(255,77,106,.2); border-color: var(--red); }
+  button.alt { color: var(--amb); border-color: rgba(255,194,77,.4); }
+  button.alt:hover { background: var(--amb-soft); box-shadow: 0 0 14px rgba(255,194,77,.2); border-color: var(--amb); }
+  .stats { display: flex; gap: 14px; flex-wrap: wrap; margin-left: auto; font-size: 11.5px; color: var(--dim); letter-spacing: .06em; }
+  .stats b { color: var(--txt); font-weight: 400; }
+  .stats .g { color: var(--grn); }
+  .stats .d { color: var(--dim); }
+  .console-line {
+    width: 100%; font-size: 11.5px; color: var(--dim); padding-top: 8px; letter-spacing: .03em;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .console-line b { color: var(--grn); font-weight: 400; }
+  .console-line .err { color: var(--red); }
+
+  /* ── layout ─────────────────────────────────────────────── */
+  .grid { display: grid; grid-template-columns: minmax(0,1fr) 348px; gap: 16px; padding-top: 16px; }
+  .sect { border: 1px solid var(--line); background: var(--panel); border-radius: 4px; }
+  .sect-title {
+    display: flex; align-items: center; gap: 8px; padding: 8px 12px;
+    font-size: 11px; letter-spacing: .18em; color: var(--dim);
+    border-bottom: 1px solid var(--line); background: var(--panel2);
+  }
+  .sect-title::before { content: "▮"; color: var(--grn); font-size: 9px; }
+  .sect-title .right { margin-left: auto; letter-spacing: .05em; color: var(--dim2); }
+
+  /* ── feed ───────────────────────────────────────────────── */
+  #feed { display: flex; flex-direction: column; }
+  .ev { border-bottom: 1px solid var(--line); padding: 9px 12px 8px; cursor: pointer; transition: background .12s; }
+  .ev:last-child { border-bottom: none; }
+  .ev:hover { background: rgba(47,255,143,.03); }
+  .ev.is-alert { border-left: 2px solid var(--grn); }
+  .ev.is-filtered { border-left: 2px solid var(--dim2); }
+  .ev.is-filtered .ev-head, .ev.is-filtered .ev-desc { opacity: .48; }
+  .ev-head { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; }
+  .ev-time { color: var(--dim2); font-size: 11px; }
+  .tag { font-size: 10px; letter-spacing: .08em; padding: 1px 7px; border-radius: 2px; border: 1px solid; white-space: nowrap; }
+  .tag-OPEN      { color: var(--grn); border-color: var(--grn-dim); background: var(--grn-soft); }
+  .tag-SIZE_UP   { color: var(--grn); border-color: var(--grn-dim); background: var(--grn-soft); }
+  .tag-CLOSE     { color: #a9bfb1; border-color: #2c3f35; background: rgba(169,191,177,.06); }
+  .tag-SIZE_DOWN { color: var(--red); border-color: rgba(255,77,106,.4); background: var(--red-soft); }
+  .tag-FLIP      { color: var(--amb); border-color: rgba(255,194,77,.45); background: var(--amb-soft); }
+  .ev-trader { color: var(--txt); }
+  .ev-trader i { font-style: normal; color: var(--dim); }
+  .ev-inst { color: var(--dim); font-size: 11.5px; }
+  .ev-score { display: flex; align-items: center; gap: 6px; margin-left: auto; }
+  .bar { width: 64px; height: 5px; background: #101c15; border-radius: 2px; overflow: hidden; }
+  .bar i { display: block; height: 100%; background: var(--grn); box-shadow: 0 0 6px rgba(47,255,143,.6); }
+  .is-filtered .bar i { background: var(--dim2); box-shadow: none; }
+  .score-n { font-size: 11px; color: var(--dim); min-width: 34px; text-align: right; }
+  .badge { font-size: 9.5px; letter-spacing: .14em; padding: 2px 7px; border-radius: 2px; }
+  .badge-alert { color: #04130a; background: var(--grn); text-shadow: none; font-weight: 700; box-shadow: 0 0 10px rgba(47,255,143,.5); }
+  .badge-filtered { color: var(--dim); border: 1px dashed var(--dim2); }
+  .ev-desc { padding: 4px 0 0 2px; color: #b9cfc0; font-size: 12.5px; }
+  .ev-desc .long { color: var(--grn); }
+  .ev-desc .short { color: var(--red); }
+  .ev-desc .pnl-up { color: var(--grn); }
+  .ev-desc .pnl-dn { color: var(--red); }
+  .ev-why { padding: 3px 0 0 2px; font-size: 11px; color: var(--dim2); }
+  .ev-why b { color: var(--dim); font-weight: 400; }
+
+  .ev-detail { display: none; margin-top: 9px; border-top: 1px dashed var(--line2); padding-top: 9px; }
+  .ev.open .ev-detail { display: block; }
+  .take { border-left: 2px solid var(--grn); background: var(--grn-soft); padding: 8px 12px; margin: 0 0 9px; color: #d7ecdd; font-size: 12.5px; }
+  .take-label { font-size: 10px; letter-spacing: .18em; color: var(--grn); margin-bottom: 4px; }
+  .no-take { border-left: 2px solid var(--dim2); background: rgba(100,122,108,.05); padding: 8px 12px; margin: 0 0 9px; color: var(--dim); font-size: 12px; }
+  .kv { display: grid; grid-template-columns: 130px 1fr; gap: 2px 12px; font-size: 11.5px; }
+  .kv dt { color: var(--dim2); letter-spacing: .06em; }
+  .kv dd { margin: 0; color: #b9cfc0; }
+  .kv dd .g { color: var(--grn); } .kv dd .r { color: var(--red); }
+
+  .empty { padding: 34px 20px; text-align: center; color: var(--dim); }
+  .empty .big { font-size: 14px; letter-spacing: .12em; color: var(--dim); margin-bottom: 8px; }
+  .empty b { color: var(--grn); font-weight: 400; }
+
+  /* ── sidebar ────────────────────────────────────────────── */
+  .side { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+  table { width: 100%; border-collapse: collapse; font-size: 11.5px; }
+  th { text-align: left; font-weight: 400; color: var(--dim2); letter-spacing: .1em; font-size: 10px; padding: 6px 8px 5px; border-bottom: 1px solid var(--line); }
+  td { padding: 5px 8px; border-bottom: 1px solid rgba(24,39,31,.6); vertical-align: top; }
+  tr:last-child td { border-bottom: none; }
+  td.rk { color: var(--dim); width: 24px; }
+  td.nm { color: var(--txt); white-space: nowrap; max-width: 118px; overflow: hidden; text-overflow: ellipsis; }
+  td.nm small { display: block; color: var(--dim2); font-size: 9.5px; letter-spacing: .08em; }
+  td.pnl { text-align: right; white-space: nowrap; }
+  .up { color: var(--grn); } .dn { color: var(--red); }
+  .chips { display: flex; gap: 4px; flex-wrap: wrap; }
+  .chip { font-size: 9.5px; padding: 1px 5px; border-radius: 2px; border: 1px solid; white-space: nowrap; }
+  .chip.l { color: var(--grn); border-color: var(--grn-dim); }
+  .chip.s { color: var(--red); border-color: rgba(255,77,106,.4); }
+  .chip.none { color: var(--dim2); border-color: var(--line); }
+
+  .sub-box { padding: 12px; }
+  .sub-box p { margin: 0 0 9px; font-size: 11.5px; color: var(--dim); }
+  .sub-box p b { color: var(--txt); font-weight: 400; }
+  .sub-row { display: flex; gap: 8px; }
+  input[type=text] {
+    flex: 1; min-width: 0; font-family: var(--mono); font-size: 12px; color: var(--txt);
+    background: #070c0a; border: 1px solid var(--line2); border-radius: 3px; padding: 7px 10px; outline: none;
+  }
+  input[type=text]:focus { border-color: var(--grn-dim); box-shadow: 0 0 10px rgba(47,255,143,.15); }
+  input[type=text]::placeholder { color: var(--dim2); }
+  .sub-note { margin-top: 8px; font-size: 10.5px; color: var(--amb); letter-spacing: .04em; }
+  .sub-result { margin-top: 8px; font-size: 11px; color: var(--grn); display: none; word-break: break-all; }
+  .sub-result.err { color: var(--red); }
+
+  .api-box { padding: 10px 12px; font-size: 11px; color: var(--dim); }
+  .api-box .row { display: flex; gap: 8px; padding: 2.5px 0; }
+  .api-box .m { color: var(--amb); width: 38px; flex: none; }
+  .api-box .p { color: #b9cfc0; }
+  .api-box .note { margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--line); color: var(--dim2); font-size: 10.5px; }
+
+  /* ── digest overlay ─────────────────────────────────────── */
+  .overlay {
+    display: none; position: fixed; inset: 0; z-index: 1000;
+    background: rgba(3,6,5,.82); padding: 4vh 16px; overflow-y: auto;
+  }
+  .overlay.show { display: block; }
+  .modal {
+    max-width: 880px; margin: 0 auto; background: var(--panel); border: 1px solid var(--line2);
+    border-radius: 5px; box-shadow: 0 0 60px rgba(47,255,143,.09);
+  }
+  .modal-head { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-bottom: 1px solid var(--line); background: var(--panel2); }
+  .modal-head .t { font-size: 11px; letter-spacing: .18em; color: var(--grn); }
+  .modal-head .f { font-size: 10.5px; color: var(--dim2); }
+  .modal-head button { margin-left: auto; padding: 3px 10px; }
+  .modal-body { padding: 16px 18px 20px; }
+  .md-h1 { font-size: 15px; color: var(--txt); letter-spacing: .04em; margin: 4px 0 10px; font-weight: 700; }
+  .md-h2 { font-size: 12px; color: var(--grn); letter-spacing: .16em; text-transform: uppercase; margin: 18px 0 8px; padding-bottom: 5px; border-bottom: 1px solid var(--line); }
+  .md-h3 { font-size: 12.5px; color: var(--amb); margin: 12px 0 5px; }
+  .md-p { margin: 0 0 8px; font-size: 12.5px; color: #b9cfc0; }
+  .md-quote { border-left: 2px solid var(--line2); padding: 2px 12px; margin: 0 0 8px; color: var(--dim); font-size: 12.5px; }
+  .md-li { margin: 0 0 4px 6px; font-size: 12.5px; color: #b9cfc0; }
+  .md-li::before { content: "· "; color: var(--grn); }
+  .md-table { width: 100%; margin: 4px 0 10px; }
+  .md-table td, .md-table th { font-size: 11.5px; }
+  .xpost { border: 1px solid var(--grn-dim); background: var(--grn-soft); border-radius: 4px; padding: 12px 14px; margin: 6px 0 10px; }
+  .xpost .body { color: #d7ecdd; font-size: 12.5px; white-space: pre-wrap; word-break: break-word; }
+  .xpost-foot { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
+  .xpost-foot .chars { font-size: 10.5px; color: var(--dim); }
+  .digest-wait { padding: 30px; text-align: center; color: var(--dim); }
+
+  footer { margin-top: 22px; padding-top: 12px; border-top: 1px solid var(--line); font-size: 10.5px; color: var(--dim2); display: flex; gap: 16px; flex-wrap: wrap; }
+  footer b { color: var(--dim); font-weight: 400; }
+
+  @media (max-width: 940px) {
+    .grid { grid-template-columns: 1fr; }
+    .stats { margin-left: 0; width: 100%; }
+    .ev-score { margin-left: 0; width: 100%; }
+    .kv { grid-template-columns: 108px 1fr; }
+    .brand .name { font-size: 14px; letter-spacing: .16em; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <svg class="mark" viewBox="0 0 48 48" aria-hidden="true">
+      <circle class="ring" cx="24" cy="24" r="20" stroke-width="1.4" opacity=".85"/>
+      <circle class="ring" cx="24" cy="24" r="12.5" stroke-width="1" opacity=".4"/>
+      <circle class="ring" cx="24" cy="24" r="5" stroke-width="1" opacity=".25"/>
+      <line class="axis" x1="24" y1="3" x2="24" y2="45" stroke-width="1"/>
+      <path class="sweep" d="M24 24 L24 4 A20 20 0 0 1 41.3 14.2 Z"/>
+      <circle class="blip-g" cx="32.5" cy="12.5" r="2.1"/>
+      <circle class="blip-r" cx="15.5" cy="35.5" r="2.1"/>
+    </svg>
+    <div class="brand">
+      <div class="name">SMART&nbsp;MONEY&nbsp;<b>MIRROR</b></div>
+      <div class="sub">whale-move alert terminal · OKX smart-money leaderboard<span class="cursor"></span></div>
+    </div>
+    <div class="top-right">
+      <span class="pill pill-demo" id="mode-pill">● MOCK DATA — SCRIPTED DEMO</span>
+      <span class="health"><span class="dot" id="health-dot"></span><span id="health-txt">FEED LIVE</span></span>
+    </div>
+  </header>
+
+  <div class="controls">
+    <button id="btn-tick">▸ Simulate next tick</button>
+    <button id="btn-reset" class="warn">↺ Reset scenario</button>
+    <button id="btn-digest" class="alt">▤ Weekly digest</button>
+    <div class="stats">
+      <span>TICK <b id="st-tick">0</b><span class="d" id="st-final"></span></span>
+      <span>EVENTS <b id="st-events">0</b></span>
+      <span>ALERTS <b class="g" id="st-alerts">0</b></span>
+      <span>FILTERED <b class="d" id="st-filtered">0</b></span>
+    </div>
+    <div class="console-line" id="console-line">&gt; standing by — press SIMULATE NEXT TICK to advance the scripted scenario (tick 1 = baseline sync)</div>
+  </div>
+
+  <div class="grid">
+    <section class="sect" style="min-width:0">
+      <div class="sect-title">LIVE ALERT FEED <span class="right">significant = highlighted · filtered = dimmed, score shown</span></div>
+      <div id="feed"><div class="empty"><div class="big">NO EVENTS YET</div>Watcher hasn't ticked. Press <b>▸ SIMULATE NEXT TICK</b> — tick 1 baseline-syncs 10 traders, whale moves start on tick 2.</div></div>
+    </section>
+
+    <aside class="side">
+      <section class="sect">
+        <div class="sect-title">LEADERBOARD <span class="right" id="lb-meta">—</span></div>
+        <div id="leaderboard"><div class="empty" style="padding:18px">loading…</div></div>
+      </section>
+
+      <section class="sect">
+        <div class="sect-title">SUBSCRIBE</div>
+        <div class="sub-box">
+          <p><b>Real-time whale alerts</b> — $5–10/mo planned · weekly digest free.</p>
+          <form class="sub-row" id="sub-form">
+            <input type="text" id="sub-input" placeholder="email or @telegram_handle" aria-label="email or telegram handle" autocomplete="off">
+            <button type="submit" id="sub-btn">Subscribe</button>
+          </form>
+          <div class="sub-note">⚠ DEMO — delivery not yet live; handles stored locally only.</div>
+          <div class="sub-result" id="sub-result"></div>
+        </div>
+      </section>
+
+      <section class="sect">
+        <div class="sect-title">SERVICE API</div>
+        <div class="api-box">
+          <div class="row"><span class="m">GET</span><span class="p">/api/health</span></div>
+          <div class="row"><span class="m">GET</span><span class="p">/api/events · /api/leaderboard · /api/digest</span></div>
+          <div class="row"><span class="m">POST</span><span class="p">/api/tick · /api/reset · /api/subscribe</span></div>
+          <div class="note">Same endpoints the terminal polls — the future pay-per-call / subscription surface. See STATUS.md.</div>
+        </div>
+      </section>
+    </aside>
+  </div>
+
+  <footer>
+    <span><b>SMART MONEY MIRROR</b> v0.1</span>
+    <span>zero dependencies · node:http · works offline</span>
+    <span>all figures mock (scripted scenario) — not financial advice</span>
+  </footer>
+</div>
+
+<div class="overlay" id="digest-overlay">
+  <div class="modal">
+    <div class="modal-head">
+      <span class="t">▤ WEEKLY DIGEST</span>
+      <span class="f" id="digest-file"></span>
+      <button id="digest-close">✕ close</button>
+    </div>
+    <div class="modal-body" id="digest-body"><div class="digest-wait">building digest…</div></div>
+  </div>
+</div>
+
+<script>
+(() => {
+  'use strict';
+  const $ = (id) => document.getElementById(id);
+  const POLL_MS = 4000;
+  const expanded = new Set();
+  let lastSig = '';
+  let lastTick = -1;
+
+  // ── tiny helpers ──────────────────────────────────────────
+  const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) =>
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+  const fmtUsd = (n, sign) => {
+    if (n == null || Number.isNaN(n)) return '—';
+    const s = n < 0 ? '-' : sign ? '+' : '';
+    const a = Math.abs(n);
+    if (a >= 1e6) return s + '$' + (a / 1e6).toFixed(2) + 'M';
+    if (a >= 1e3) return s + '$' + (a / 1e3).toFixed(0) + 'K';
+    return s + '$' + a.toFixed(0);
+  };
+  const fmtTime = (ts) => { try { return new Date(ts).toLocaleTimeString('en-GB'); } catch { return '—'; } };
+  const fmtPct = (n, d = 1) => n == null ? '—' : (n >= 0 ? '+' : '') + n.toFixed(d) + '%';
+
+  // colorize LONG/SHORT + signed $ amounts inside an ALREADY-ESCAPED string
+  const paint = (safe) => safe
+    .replace(/\bLONG\b/g, '<span class="long">LONG</span>')
+    .replace(/\bSHORT\b/g, '<span class="short">SHORT</span>')
+    .replace(/\+\$[\d.,]+[KM]?/g, (m) => '<span class="pnl-up">' + m + '</span>')
+    .replace(/-\$[\d.,]+[KM]?/g, (m) => '<span class="pnl-dn">' + m + '</span>');
+
+  const api = async (path, opts) => {
+    const res = await fetch(path, opts);
+    return res.json();
+  };
+  const consoleLine = (html, isErr) => {
+    $('console-line').innerHTML = '&gt; ' + (isErr ? '<span class="err">' + html + '</span>' : html);
+  };
+  const health = (ok) => {
+    $('health-dot').className = 'dot' + (ok ? '' : ' down');
+    $('health-txt').textContent = ok ? 'FEED LIVE' : 'API OFFLINE';
+  };
+
+  // ── feed ──────────────────────────────────────────────────
+  const evKey = (e) => e.id + '|' + e.ts + '|' + e.trader.id + '|' + e.instId + '|' + e.type;
+
+  function renderDetail(e) {
+    const sig = e.significance || {};
+    const parts = sig.parts || {};
+    const m = e.market;
+    const take = e.take
+      ? '<div class="take"><div class="take-label">ANALYST TAKE</div>' + paint(esc(e.take)) + '</div>'
+      : '<div class="no-take">no analyst take — event below the alert bar (' + esc(e.filteredReason || 'filtered') + ')</div>';
+    const rows = [
+      ['position', esc((e.side || '').toUpperCase()) + ' ' + esc(String(e.size)) + ' @ ' + esc(String(e.entryPx)) + ' (' + esc(String(e.lever)) + 'x) · notional ' + fmtUsd(e.notionalUsd)],
+      e.prevSide ? ['prev side', esc(e.prevSide.toUpperCase()) + ' (size ' + esc(String(e.prevSize)) + ')'] : null,
+      (e.prevSize != null && !e.prevSide) ? ['prev size', esc(String(e.prevSize))] : null,
+      e.realizedPnlUsd != null ? ['realized pnl', '<span class="' + (e.realizedPnlUsd >= 0 ? 'g' : 'r') + '">' + fmtUsd(e.realizedPnlUsd, true) + '</span>'] : null,
+      ['book share', Math.round((sig.bookShare || 0) * 100) + '% of trader\'s ' + fmtUsd(e.bookNotionalUsd) + ' book'],
+      ['score breakdown', 'rank ' + (parts.rank ?? '—') + ' + book ' + (parts.bookShare ?? '—') + ' + unusualness ' + (parts.unusualness ?? '—') + ' = <b>' + (sig.score ?? '—') + '</b>/100' + (e.traderDropped ? ' <span class="r">(×0.5 — trader left leaderboard)</span>' : '')],
+      m ? ['market', esc(e.instId.split('-')[0]) + ' mark ' + esc(String(m.markPx)) + ' · 24h ' + fmtPct(m.chg24hPct) + ' · funding ' + fmtPct(m.fundingRatePct, 3) + ' · OI ' + fmtPct(m.oiChg24hPct)] : null,
+      ['verdict', e.alert ? '<span class="g">ALERT — dispatched to subscribers</span>' : '<span class="r">FILTERED</span> — ' + esc(e.filteredReason || '')],
+    ].filter(Boolean);
+    return take + '<dl class="kv">' + rows.map(([k, v]) => '<dt>' + k + '</dt><dd>' + v + '</dd>').join('') + '</dl>';
+  }
+
+  function renderFeed(events) {
+    const feed = $('feed');
+    if (!events.length) return; // keep the empty-state block
+    feed.innerHTML = events.map((e) => {
+      const key = evKey(e);
+      const score = e.significance ? e.significance.score : 0;
+      return '<div class="ev ' + (e.alert ? 'is-alert' : 'is-filtered') + (expanded.has(key) ? ' open' : '') + '" data-key="' + esc(key) + '">'
+        + '<div class="ev-head">'
+        + '<span class="ev-time">' + fmtTime(e.ts) + '</span>'
+        + '<span class="tag tag-' + esc(e.type) + '">' + esc(e.label || e.type) + '</span>'
+        + '<span class="ev-trader">#' + esc(String(e.trader.rank)) + ' ' + esc(e.trader.name) + ' <i>· ' + esc(e.trader.badge) + '</i></span>'
+        + '<span class="ev-inst">' + esc(e.instId) + '</span>'
+        + '<span class="ev-score"><span class="bar"><i style="width:' + Math.max(2, Math.min(100, score)) + '%"></i></span>'
+        + '<span class="score-n">' + score + '</span>'
+        + (e.alert ? '<span class="badge badge-alert">ALERT</span>' : '<span class="badge badge-filtered">FILTERED</span>')
+        + '</span></div>'
+        + '<div class="ev-desc">' + paint(esc(e.desc || '')) + '</div>'
+        + (!e.alert ? '<div class="ev-why">▸ filtered: <b>' + esc(e.filteredReason || '') + '</b> · score ' + score + '/100 — click for the math</div>' : '')
+        + '<div class="ev-detail">' + renderDetail(e) + '</div>'
+        + '</div>';
+    }).join('');
+    feed.querySelectorAll('.ev').forEach((el) => {
+      el.addEventListener('click', () => {
+        const key = el.getAttribute('data-key');
+        el.classList.toggle('open');
+        el.classList.contains('open') ? expanded.add(key) : expanded.delete(key);
+      });
+    });
+  }
+
+  async function refreshEvents() {
+    try {
+      const data = await api('/api/events?limit=250');
+      health(true);
+      if (data.demo === false) {
+        $('mode-pill').textContent = '● LIVE MODE';
+        $('mode-pill').className = 'pill pill-live';
+      }
+      $('st-tick').textContent = data.tick;
+      $('st-final').textContent = data.finalTick && data.tick <= data.finalTick ? '/' + data.finalTick : '';
+      $('st-events').textContent = data.count;
+      $('st-alerts').textContent = data.alerts;
+      $('st-filtered').textContent = data.filtered;
+      const sig = data.tick + '|' + data.count + '|' + (data.updatedAt || '');
+      if (sig !== lastSig) {
+        lastSig = sig;
+        if (data.count === 0) {
+          $('feed').innerHTML = '<div class="empty"><div class="big">NO EVENTS YET</div>'
+            + (data.tick === 0
+              ? 'Watcher hasn\'t ticked. Press <b>▸ SIMULATE NEXT TICK</b> — tick 1 baseline-syncs 10 traders, whale moves start on tick 2.'
+              : 'Baseline synced at tick ' + data.tick + '. Press <b>▸ SIMULATE NEXT TICK</b> — whale moves start now.')
+            + '</div>';
+        } else {
+          renderFeed(data.events);
+        }
+      }
+      if (data.tick !== lastTick) { lastTick = data.tick; refreshLeaderboard(); }
+    } catch {
+      health(false);
+    }
+  }
+
+  // ── leaderboard ───────────────────────────────────────────
+  async function refreshLeaderboard() {
+    try {
+      const data = await api('/api/leaderboard');
+      if (!data.ok) { $('leaderboard').innerHTML = '<div class="empty" style="padding:16px">' + esc(data.error) + '</div>'; return; }
+      $('lb-meta').textContent = data.preview ? 'baseline preview (pre-sync)' : 'snapshot @ tick ' + data.tick;
+      $('leaderboard').innerHTML = '<table><tr><th>#</th><th>TRADER</th><th style="text-align:right">30D PNL</th></tr>'
+        + data.traders.map((t) => '<tr>'
+          + '<td class="rk">' + t.rank + '</td>'
+          + '<td class="nm">' + esc(t.name) + '<small>' + esc(t.badge).toUpperCase() + '</small>'
+          + '<div class="chips">' + (t.positions.length
+              ? t.positions.map((p) => '<span class="chip ' + (p.side === 'long' ? 'l' : 's') + '">' + esc(p.instId.split('-')[0]) + ' ' + (p.side === 'long' ? 'L' : 'S') + '</span>').join('')
+              : '<span class="chip none">flat</span>')
+          + '</div></td>'
+          + '<td class="pnl ' + (t.pnl30d >= 0 ? 'up' : 'dn') + '">' + fmtUsd(t.pnl30d, true) + '</td>'
+          + '</tr>').join('')
+        + '</table>';
+    } catch { /* next poll retries */ }
+  }
+
+  // ── controls ──────────────────────────────────────────────
+  $('btn-tick').addEventListener('click', async () => {
+    const b = $('btn-tick'); b.disabled = true;
+    try {
+      const r = await api('/api/tick', { method: 'POST' });
+      if (!r.ok) consoleLine(esc(r.error), true);
+      else if (r.baseline) consoleLine('tick ' + r.tick + ' — <b>baseline synced</b>, tracking positions; no alerts on first sync');
+      else if (r.steadyState && r.events === 0) consoleLine('tick ' + r.tick + ' — steady state, scripted scenario complete (<b>RESET</b> to replay)');
+      else consoleLine('tick ' + r.tick + ' — ' + r.events + ' event(s) → <b>' + r.alerts + ' alert(s)</b>, ' + r.filtered + ' filtered');
+      await refreshEvents();
+    } catch { consoleLine('tick failed — API unreachable', true); health(false); }
+    b.disabled = false;
+  });
+
+  $('btn-reset').addEventListener('click', async () => {
+    try {
+      await api('/api/reset', { method: 'POST' });
+      expanded.clear(); lastSig = ''; lastTick = -1;
+      consoleLine('scenario rewound to tick 0 — press <b>▸ SIMULATE NEXT TICK</b>');
+      $('sub-result').style.display = 'none';
+      await refreshEvents();
+    } catch { consoleLine('reset failed — API unreachable', true); }
+  });
+
+  // ── digest ────────────────────────────────────────────────
+  const overlay = $('digest-overlay');
+  $('btn-digest').addEventListener('click', async () => {
+    overlay.classList.add('show');
+    $('digest-body').innerHTML = '<div class="digest-wait">building digest…</div>';
+    $('digest-file').textContent = '';
+    try {
+      const d = await api('/api/digest');
+      if (!d.ok) { $('digest-body').innerHTML = '<div class="digest-wait">' + esc(d.error) + '</div>'; return; }
+      $('digest-file').textContent = 'out/' + d.file;
+      $('digest-body').innerHTML = renderMarkdown(d.markdown, d.tweet, d.tweetChars);
+      const copyBtn = $('xpost-copy');
+      if (copyBtn) copyBtn.addEventListener('click', () => copyText(d.tweet, copyBtn));
+    } catch {
+      $('digest-body').innerHTML = '<div class="digest-wait">digest failed — API unreachable</div>';
+    }
+  });
+  $('digest-close').addEventListener('click', () => overlay.classList.remove('show'));
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.classList.remove('show'); });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') overlay.classList.remove('show'); });
+
+  function copyText(text, btn) {
+    const done = () => { const t = btn.textContent; btn.textContent = '✓ COPIED'; setTimeout(() => { btn.textContent = t; }, 1600); };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(done).catch(() => fallbackCopy(text, done));
+    } else fallbackCopy(text, done);
+  }
+  function fallbackCopy(text, done) {
+    const ta = document.createElement('textarea');
+    ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta); ta.select();
+    try { document.execCommand('copy'); done(); } catch { /* ignore */ }
+    document.body.removeChild(ta);
+  }
+
+  // minimal, safe markdown renderer for the digest (escape first, then shape)
+  function renderMarkdown(md, tweet, tweetChars) {
+    const lines = md.split('\n');
+    const out = [];
+    let inCode = false, codeBuf = [], tableBuf = [];
+    const inline = (safe) => paint(safe)
+      .replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>')
+      .replace(/`([^`]+)`/g, '<code>$1</code>');
+    const flushTable = () => {
+      if (!tableBuf.length) return;
+      const rows = tableBuf.filter((r) => !/^\|[\s\-|]+\|$/.test(r.trim()));
+      out.push('<table class="md-table">' + rows.map((r, i) => {
+        const cells = r.replace(/^\||\|$/g, '').split('|').map((c) => inline(esc(c.trim())));
+        const tag = i === 0 ? 'th' : 'td';
+        return '<tr>' + cells.map((c) => '<' + tag + '>' + c + '</' + tag + '>').join('') + '</tr>';
+      }).join('') + '</table>');
+      tableBuf = [];
+    };
+    for (const raw of lines) {
+      const line = raw;
+      if (line.trim().startsWith('```')) {
+        if (inCode) {
+          // the only fenced block in the digest is the X-post — render it as the copy card
+          out.push('<div class="xpost"><div class="body">' + esc(codeBuf.join('\n')) + '</div>'
+            + '<div class="xpost-foot"><button id="xpost-copy">⧉ Copy X-post</button>'
+            + '<span class="chars">' + (tweetChars ?? esc(codeBuf.join('\n')).length) + '/280 chars · ready to ship</span></div></div>');
+          codeBuf = []; inCode = false;
+        } else { flushTable(); inCode = true; }
+        continue;
+      }
+      if (inCode) { codeBuf.push(line); continue; }
+      if (line.trim().startsWith('|')) { tableBuf.push(line); continue; }
+      flushTable();
+      if (line.startsWith('### ')) out.push('<div class="md-h3">' + inline(esc(line.slice(4))) + '</div>');
+      else if (line.startsWith('## ')) out.push('<div class="md-h2">' + inline(esc(line.slice(3))) + '</div>');
+      else if (line.startsWith('# ')) out.push('<div class="md-h1">' + inline(esc(line.slice(2))) + '</div>');
+      else if (line.startsWith('> ')) out.push('<div class="md-quote">' + inline(esc(line.slice(2))) + '</div>');
+      else if (line.startsWith('- ')) out.push('<div class="md-li">' + inline(esc(line.slice(2))) + '</div>');
+      else if (/^_[^_]+_$/.test(line.trim())) out.push('<div class="md-quote">' + inline(esc(line.trim().slice(1, -1))) + '</div>');
+      else if (line.trim() !== '') out.push('<div class="md-p">' + inline(esc(line)) + '</div>');
+    }
+    flushTable();
+    return out.join('');
+  }
+
+  // ── subscribe ─────────────────────────────────────────────
+  $('sub-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const input = $('sub-input');
+    const result = $('sub-result');
+    const contact = input.value.trim();
+    if (!contact) return;
+    $('sub-btn').disabled = true;
+    try {
+      const r = await api('/api/subscribe', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ contact }),
+      });
+      result.style.display = 'block';
+      if (r.ok) {
+        result.className = 'sub-result';
+        result.textContent = '✓ ' + r.subscribed + ' subscribed via ' + r.channel
+          + (r.alreadySubscribed ? ' (already on the list)' : '') + ' — ' + r.total + ' total. ' + r.note + '.';
+        input.value = '';
+      } else {
+        result.className = 'sub-result err';
+        result.textContent = '✕ ' + r.error;
+      }
+    } catch {
+      result.style.display = 'block';
+      result.className = 'sub-result err';
+      result.textContent = '✕ subscribe failed — API unreachable';
+    }
+    $('sub-btn').disabled = false;
+  });
+
+  // ── boot ──────────────────────────────────────────────────
+  refreshEvents();
+  refreshLeaderboard();
+  setInterval(refreshEvents, POLL_MS);
+})();
+</script>
+</body>
+</html>
