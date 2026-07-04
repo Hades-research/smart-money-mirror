@@ -38,6 +38,13 @@ import { describeMove, eventLabel } from './format.js';
 import { FINAL_TICK, snapshotAt } from './mock/scenario.js';
 import { gate as x402Gate, x402Mode } from './x402/gate.js';
 
+// The hosted service defaults to real OKX public data (leaderboard + positions
+// are public — no keys), so the live feed shows actual lead traders. Mutating
+// the shared config object works because the adapter reads config.mode at call
+// time. CLI/tests/demo import config fresh, so they keep the scripted mock
+// scenario (the better 90-second demo). Override with OKX_MODE.
+config.mode = (process.env.OKX_MODE || 'real').toLowerCase();
+
 const WEB_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), 'web');
 const INDEX_HTML = path.join(WEB_DIR, 'index.html');
 
